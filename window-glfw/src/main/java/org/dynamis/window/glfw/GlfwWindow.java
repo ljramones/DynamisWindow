@@ -21,6 +21,7 @@ import org.lwjgl.glfw.GLFWWindowSizeCallback;
 import org.lwjgl.system.MemoryStack;
 
 import java.nio.IntBuffer;
+import java.nio.LongBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ConcurrentLinkedQueue;
@@ -55,7 +56,10 @@ import static org.lwjgl.glfw.GLFW.glfwSwapBuffers;
 import static org.lwjgl.glfw.GLFW.glfwSwapInterval;
 import static org.lwjgl.glfw.GLFW.glfwWindowHint;
 import static org.lwjgl.glfw.GLFW.glfwWindowShouldClose;
+import static org.lwjgl.glfw.GLFWVulkan.nglfwCreateWindowSurface;
+import static org.lwjgl.system.MemoryUtil.memAddress;
 import static org.lwjgl.vulkan.VK10.VK_NULL_HANDLE;
+import static org.lwjgl.vulkan.VK10.VK_SUCCESS;
 
 public final class GlfwWindow implements Window {
     private final WindowHandle handle;
@@ -67,6 +71,7 @@ public final class GlfwWindow implements Window {
 
     private WindowSize windowSize;
     private WindowSize framebufferSize;
+    private long vulkanInstanceHandle = VK_NULL_HANDLE;
     private long vulkanSurfaceHandle = VK_NULL_HANDLE;
 
     private GLFWWindowSizeCallback windowSizeCallback;
@@ -129,12 +134,20 @@ public final class GlfwWindow implements Window {
         return vulkanSurfaceHandle;
     }
 
-    public long createVulkanSurface(long surfaceHandle) {
-        if (surfaceHandle <= 0) {
-            throw new IllegalArgumentException("surfaceHandle must be positive");
+    public long createVulkanSurface(long instanceHandle) {
+        if (instanceHandle <= 0) {
+            throw new IllegalArgumentException("instanceHandle must be positive");
         }
-        this.vulkanSurfaceHandle = surfaceHandle;
-        return vulkanSurfaceHandle;
+        try (MemoryStack stack = MemoryStack.stackPush()) {
+            LongBuffer pSurface = stack.mallocLong(1);
+            int result = nglfwCreateWindowSurface(instanceHandle, windowPtr, 0L, memAddress(pSurface));
+            if (result != VK_SUCCESS) {
+                throw new IllegalStateException("Failed to create Vulkan surface, VkResult=" + result);
+            }
+            this.vulkanInstanceHandle = instanceHandle;
+            this.vulkanSurfaceHandle = pSurface.get(0);
+            return vulkanSurfaceHandle;
+        }
     }
 
     @Override
@@ -175,6 +188,7 @@ public final class GlfwWindow implements Window {
     @Override
     public void destroySurface(SurfaceHandle handle) {
         if (handle.value() == vulkanSurfaceHandle) {
+            vulkanInstanceHandle = VK_NULL_HANDLE;
             vulkanSurfaceHandle = VK_NULL_HANDLE;
         }
     }
